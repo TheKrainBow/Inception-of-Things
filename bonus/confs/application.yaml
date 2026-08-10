@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  # Independent from p3's "playground" Application: separate name and
+  # destination namespace, so this never touches p3's own GitHub-backed
+  # app. Both stay deployed and demoable at the same time.
+  name: playground-gitlab
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://gitlab.gitlab.svc.cluster.local/maagosti/playground.git
+    targetRevision: HEAD
+    path: manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev-gitlab
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
