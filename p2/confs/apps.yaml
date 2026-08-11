@@ -1,0 +1,314 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app1-content
+  labels:
+    app.kubernetes.io/name: app1
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>IoT - Application 1</title>
+      <style>
+        body { margin: 0; display: grid; min-height: 100vh; place-items: center; background: #071a2b; color: #e7f5ff; font: 18px system-ui, sans-serif; }
+        main { max-width: 42rem; padding: 3rem; text-align: center; }
+        strong { color: #38bdf8; font-size: 4rem; }
+        code { color: #bae6fd; }
+      </style>
+    </head>
+    <body>
+      <main id="app-1">
+        <strong>APP 1</strong>
+        <p>Selected by the HTTP host <code>app1.com</code>.</p>
+      </main>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app1
+  labels:
+    app.kubernetes.io/name: app1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app1
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: content
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+      volumes:
+        - name: content
+          configMap:
+            name: app1-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app1
+  labels:
+    app.kubernetes.io/name: app1
+spec:
+  selector:
+    app.kubernetes.io/name: app1
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app2-content
+  labels:
+    app.kubernetes.io/name: app2
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>IoT - Application 2</title>
+      <style>
+        body { margin: 0; display: grid; min-height: 100vh; place-items: center; background: #22103d; color: #f5f3ff; font: 18px system-ui, sans-serif; }
+        main { max-width: 42rem; padding: 3rem; text-align: center; }
+        strong { color: #c084fc; font-size: 4rem; }
+        code { color: #e9d5ff; }
+      </style>
+    </head>
+    <body>
+      <main id="app-2">
+        <strong>APP 2</strong>
+        <p>Selected by <code>app2.com</code> and served by three replicas.</p>
+      </main>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app2
+  labels:
+    app.kubernetes.io/name: app2
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app2
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: content
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+      volumes:
+        - name: content
+          configMap:
+            name: app2-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app2
+  labels:
+    app.kubernetes.io/name: app2
+spec:
+  selector:
+    app.kubernetes.io/name: app2
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app3-content
+  labels:
+    app.kubernetes.io/name: app3
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>IoT - Application 3</title>
+      <style>
+        body { margin: 0; display: grid; min-height: 100vh; place-items: center; background: #102319; color: #ecfdf5; font: 18px system-ui, sans-serif; }
+        main { max-width: 42rem; padding: 3rem; text-align: center; }
+        strong { color: #4ade80; font-size: 4rem; }
+        code { color: #bbf7d0; }
+      </style>
+    </head>
+    <body>
+      <main id="app-3">
+        <strong>APP 3</strong>
+        <p>This is the default backend when no host rule matches.</p>
+      </main>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app3
+  labels:
+    app.kubernetes.io/name: app3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app3
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: content
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+      volumes:
+        - name: content
+          configMap:
+            name: app3-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app3
+  labels:
+    app.kubernetes.io/name: app3
+spec:
+  selector:
+    app.kubernetes.io/name: app3
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: applications
+spec:
+  ingressClassName: traefik
+  defaultBackend:
+    service:
+      name: app3
+      port:
+        name: http
+  rules:
+    - host: app1.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app1
+                port:
+                  name: http
+    - host: app2.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app2
+                port:
+                  name: http
