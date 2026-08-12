@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-data
+  namespace: gitlab
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 4Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gitlab
+  template:
+    metadata:
+      labels:
+        app: gitlab
+    spec:
+      containers:
+        - name: gitlab
+          image: gitlab/gitlab-ce:latest
+          ports:
+            - name: http
+              containerPort: 80
+            - name: ssh
+              containerPort: 22
+          env:
+            # Trimmed Omnibus config: same official/latest GitLab package,
+            # with registry, pages and mail workers disabled and
+            # Puma/Sidekiq scaled down so it fits on a small single-node
+            # lab instead of GitLab's usual 4+ vCPU host. The bundled
+            # Prometheus/Grafana/exporters stack has been removed from
+            # recent GitLab releases, so there's nothing left to toggle
+            # off there anymore (setting those keys errors out with
+            # Mixlib::Config::UnknownConfigOptionError).
+            - name: GITLAB_OMNIBUS_CONFIG
+              value: |
+                external_url 'http://gitlab.gitlab.svc.cluster.local'
+                gitlab_rails['gitlab_shell_ssh_port'] = 2222
+                # k8s readiness/liveness probes hit this pod from the node's
+                # network, not from loopback, so the default 127.0.0.0/8
+                # monitoring_whitelist makes GitLab 404 the health-check
+                # routes for them. Trust the whole in-cluster pod network.
+                gitlab_rails['monitoring_whitelist'] = ['10.0.0.0/8', '127.0.0.0/8']
+                puma['worker_processes'] = 0
+                sidekiq['max_concurrency'] = 5
+                registry['enable'] = false
+                gitlab_rails['registry_enabled'] = false
+                gitlab_pages['enable'] = false
+                mailroom['enable'] = false
+                gitlab_kas['enable'] = false
+          volumeMounts:
+            - name: gitlab-data
+              mountPath: /etc/gitlab
+              subPath: config
+            - name: gitlab-data
+              mountPath: /var/opt/gitlab
+              subPath: data
+            - name: gitlab-data
+              mountPath: /var/log/gitlab
+              subPath: logs
+          readinessProbe:
+            httpGet:
+              path: /-/readiness
+              port: 80
+            initialDelaySeconds: 180
+            periodSeconds: 15
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              memory: "6Gi"
+      volumes:
+        - name: gitlab-data
+          persistentVolumeClaim:
+            claimName: gitlab-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab
+  namespace: gitlab
+spec:
+  selector:
+    app: gitlab
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: ssh
+      port: 22
+      targetPort: 22

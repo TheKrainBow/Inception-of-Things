@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# Creates the K3d cluster, installs Argo CD and deploys the "dev"
+# application that Argo CD keeps in sync with the public GitHub repo.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFS_DIR="${SCRIPT_DIR}/../confs"
+CLUSTER_NAME="maagosti-iot"
+PATH="${HOME}/.local/bin:${PATH}"
+
+if ! k3d cluster list "${CLUSTER_NAME}" >/dev/null 2>&1; then
+    echo "==> Creating K3d cluster ${CLUSTER_NAME}"
+    k3d cluster create "${CLUSTER_NAME}" \
+        --servers 1 \
+        --agents 0 \
+        --port "8888:8888@loadbalancer" \
+        --wait
+fi
+
+kubectl config use-context "k3d-${CLUSTER_NAME}"
+
+echo "==> Creating namespaces"
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+
+echo "==> Installing Argo CD"
+# --server-side avoids the "metadata.annotations: Too long" error client-side
+# apply hits on Argo CD's large applicationsets.argoproj.io CRD.
+kubectl apply -n argocd --server-side --force-conflicts \
+    -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+echo "==> Waiting for Argo CD to be ready"
+kubectl -n argocd wait --for=condition=available --timeout=300s deployment/argocd-server
+kubectl -n argocd wait --for=condition=available --timeout=300s deployment/argocd-repo-server
+kubectl -n argocd wait --for=condition=available --timeout=300s deployment/argocd-applicationset-controller
+
+echo "==> Applying the Argo CD Application"
+kubectl apply -f "${CONFS_DIR}/application.yaml"
+
+echo "==> Waiting for the dev application to sync"
+for _ in $(seq 1 60); do
+    STATUS="$(kubectl -n argocd get application playground -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+    [ "${STATUS}" = "Synced" ] && break
+    sleep 5
+done
+kubectl -n dev get pods
+
+ADMIN_PASSWORD="$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
+echo "==> Argo CD admin password: ${ADMIN_PASSWORD}"
+echo "==> Port-forward the UI with: kubectl -n argocd port-forward svc/argocd-server 8080:443"
