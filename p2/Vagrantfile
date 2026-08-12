@@ -1,0 +1,49 @@
+# frozen_string_literal: true
+
+LOGIN = ENV.fetch("IOT_LOGIN", "tmoragli")
+BOX = ENV.fetch("IOT_BOX", "bento/ubuntu-26.04")
+SERVER_IP = "192.168.56.110"
+
+unless LOGIN.match?(/\A[a-z0-9-]+\z/)
+	abort "IOT_LOGIN must contain only lowercase letters, digits, and hyphens"
+end
+
+Vagrant.configure("2") do |config|
+	config.vm.box = BOX
+	config.vm.box_check_update = true
+	config.vm.boot_timeout = 600
+	config.ssh.insert_key = true
+	config.vm.synced_folder ".", "/vagrant", disabled: true
+
+	server_name = "#{LOGIN}S"
+
+	config.vm.define server_name, primary: true do |server|
+		server.vm.hostname = server_name
+		server.vm.network "private_network", ip: SERVER_IP
+
+		server.vm.provider "virtualbox" do |virtualbox|
+			virtualbox.name = server_name
+			virtualbox.gui = false
+			virtualbox.cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "1"))
+			virtualbox.memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "1536"))
+		end
+
+		server.vm.provision "file",
+			source: "confs/apps.yaml",
+			destination: "/tmp/iot-apps.yaml"
+
+		server.vm.provision "shell",
+			path: "scripts/install-k3s.sh",
+			env: {
+				"NODE_IP" => SERVER_IP,
+				"K3S_NODE_NAME" => server_name.downcase
+			}
+
+		server.vm.provision "shell",
+			path: "scripts/deploy-apps.sh",
+			env: {
+				"MANIFEST_PATH" => "/tmp/iot-apps.yaml",
+				"SERVER_IP" => SERVER_IP
+			}
+	end
+end

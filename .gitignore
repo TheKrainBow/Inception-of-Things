@@ -1,2 +1,4 @@
-.vagrant
 en.subject.pdf
+.DS_Store
+**/.vagrant/
+

@@ -1,0 +1,73 @@
+# frozen_string_literal: true
+
+require "fileutils"
+require "securerandom"
+
+LOGIN = ENV.fetch("IOT_LOGIN", "tmoragli")
+BOX = ENV.fetch("IOT_BOX", "bento/ubuntu-26.04")
+SERVER_IP = "192.168.56.110"
+AGENT_IP = "192.168.56.111"
+
+unless LOGIN.match?(/\A[a-z0-9-]+\z/)
+	abort "IOT_LOGIN must contain only lowercase letters, digits, and hyphens"
+end
+
+token_path = File.join(__dir__, ".vagrant", "k3s-token")
+FileUtils.mkdir_p(File.dirname(token_path))
+unless File.exist?(token_path)
+	File.write(token_path, SecureRandom.hex(32))
+	File.chmod(0o600, token_path)
+end
+cluster_token = File.read(token_path).strip
+
+Vagrant.configure("2") do |config|
+	config.vm.box = BOX
+	config.vm.box_check_update = true
+	config.vm.boot_timeout = 600
+	config.ssh.insert_key = true
+	config.vm.synced_folder ".", "/vagrant", disabled: true
+
+	server_name = "#{LOGIN}S"
+	agent_name = "#{LOGIN}SW"
+
+	config.vm.define server_name, primary: true do |server|
+		server.vm.hostname = server_name
+		server.vm.network "private_network", ip: SERVER_IP
+
+		server.vm.provider "virtualbox" do |virtualbox|
+			virtualbox.name = server_name
+			virtualbox.gui = false
+			virtualbox.cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "1"))
+			virtualbox.memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "1024"))
+		end
+
+		server.vm.provision "shell",
+			path: "scripts/install-server.sh",
+			env: {
+				"K3S_TOKEN" => cluster_token,
+				"NODE_IP" => SERVER_IP,
+				"K3S_NODE_NAME" => server_name.downcase
+			}
+	end
+
+	config.vm.define agent_name do |agent|
+		agent.vm.hostname = agent_name
+		agent.vm.network "private_network", ip: AGENT_IP
+
+		agent.vm.provider "virtualbox" do |virtualbox|
+			virtualbox.name = agent_name
+			virtualbox.gui = false
+			virtualbox.cpus = Integer(ENV.fetch("IOT_AGENT_CPUS", "1"))
+			virtualbox.memory = Integer(ENV.fetch("IOT_AGENT_MEMORY", "768"))
+		end
+
+		agent.vm.provision "shell",
+			path: "scripts/install-agent.sh",
+			env: {
+				"K3S_TOKEN" => cluster_token,
+				"NODE_IP" => AGENT_IP,
+				"SERVER_IP" => SERVER_IP,
+				"K3S_NODE_NAME" => agent_name.downcase
+			}
+	end
+end
