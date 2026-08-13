@@ -31,6 +31,10 @@ echo "==> Installing Argo CD"
 kubectl apply -n argocd --server-side --force-conflicts \
     -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
+echo "==> Lowering Argo CD's reconciliation interval to 30s"
+kubectl -n argocd patch configmap argocd-cm --type merge \
+    -p '{"data":{"timeout.reconciliation":"30s"}}'
+
 echo "==> Waiting for Argo CD to be ready"
 kubectl -n argocd wait --for=condition=available --timeout=300s deployment/argocd-server
 kubectl -n argocd wait --for=condition=available --timeout=300s deployment/argocd-repo-server

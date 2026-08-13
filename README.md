@@ -1,9 +1,11 @@
-# Inception-of-Things: Parts 1 and 2
+# Inception-of-Things
 
-This repository implements the first two mandatory parts of the IoT subject:
+This repository implements all three mandatory parts of the IoT subject, plus the bonus:
 
 - `p1`: two Vagrant machines, one K3s server and one K3s agent.
 - `p2`: one Vagrant machine, three web applications, three replicas for app 2, and host-based routing through Traefik Ingress.
+- `p3`: a K3d cluster (no Vagrant) with Argo CD continuously deploying an app from a public GitHub repository into a `dev` namespace.
+- `bonus`: a local GitLab instance running inside the `p3` cluster, with a second Argo CD Application that deploys the same kind of app from that GitLab instance instead of GitHub.
 
 The default login is `tmoragli`, so the required VM hostnames are `tmoragliS` and `tmoragliSW`. Kubernetes object names must be lowercase DNS names, so the corresponding node names shown by `kubectl` are `tmoraglis` and `tmoraglisw`.
 
@@ -15,16 +17,25 @@ make LOGIN=yourlogin up
 
 Install these on the host computer:
 
-- Vagrant
-- VirtualBox
+- Vagrant and VirtualBox, for Parts 1 and 2
+- Docker, K3d, kubectl and the Argo CD CLI, for Part 3 and the bonus
 - GNU Make (optional; every command can also be run directly)
-- `curl` for the Part 2 host-side checks
+- `curl` for the Part 2 host-side checks and the Part 3/bonus smoke tests
+- `jq`, `git` and `openssl`, for the bonus's GitLab bootstrap script
+
+`./install_dependencies.sh` installs all of the above on a Debian/Ubuntu host in one
+pass (safe to re-run). `p3/scripts/install.sh` installs only the Part 3/bonus subset
+and is what the `make install` targets below call.
 
 Quick checks:
 
 ```bash
 vagrant --version
 VBoxManage --version
+docker --version
+k3d --version
+kubectl version --client
+argocd version --client
 make --version
 ```
 
@@ -37,6 +48,8 @@ IOT_BOX=bento/ubuntu-24.04 make up
 ## Important: run one part at a time
 
 Parts 1 and 2 both require a VM named `<login>S` at `192.168.56.110`. They are separate Vagrant environments and cannot coexist under the same VirtualBox VM name. Destroy Part 1 before launching Part 2.
+
+Part 3 and the bonus do not use Vagrant at all — they run K3d (K3s in Docker) directly on the host, so they don't conflict with Parts 1/2 and can be left running alongside them. The bonus is layered on top of the same K3d cluster that Part 3 creates, so bring Part 3 up first.
 
 ## Part 1
 
@@ -141,6 +154,101 @@ curl -H 'Host: anything' http://192.168.56.110/
 
 The deployment table must show desired/current/ready replica counts of `1/1/1` for app 1, `3/3/3` for app 2, and `1/1/1` for app 3.
 
+## Part 3
+
+Part 3 swaps Vagrant/VirtualBox for K3d (K3s running as Docker containers) and adds
+Argo CD on top for GitOps-style continuous deployment. It creates:
+
+- a single-node K3d cluster named `maagosti-iot`, with its load balancer port `8888`
+  mapped to the host,
+- an `argocd` namespace running Argo CD,
+- a `dev` namespace holding the `playground` Application, which Argo CD keeps
+  synced from the `manifests` path of the public
+  [TheKrainBow/maagosti-iot](https://github.com/TheKrainBow/maagosti-iot) GitHub
+  repository.
+
+Bring it up:
+
+```bash
+cd p3
+make install   # docker, k3d, kubectl, argocd CLI (skips what's already present)
+make up        # creates the cluster, installs Argo CD, applies the Application
+make verify
+```
+
+`make verify` checks that the `playground` Application reports `Synced` and curls the
+app through the K3d load balancer:
+
+```bash
+kubectl -n argocd get application playground
+curl http://localhost:8888/
+# {"status":"ok", "message": "v1"}
+```
+
+Other useful commands:
+
+```bash
+make status    # Argo CD applications + everything in the dev namespace
+make destroy   # deletes the maagosti-iot K3d cluster
+```
+
+To change the deployed version, edit `manifests/deployment.yaml` in the GitHub repo
+(e.g. swap the image tag from `wil42/playground:v1` to `:v2`), push, and Argo CD's
+automated sync (`prune: true`, `selfHeal: true`) picks it up on its own — re-run
+`make verify` a little later and the `message` field flips to `v2`.
+
+## Bonus: local GitLab
+
+The bonus adds a self-hosted GitLab instance inside the same K3d cluster from Part 3,
+and a second, independent Argo CD Application that deploys from that GitLab instead
+of GitHub. Part 3's own `playground` Application, `dev` namespace and GitHub source
+are left untouched, so both are deployed and demoable at the same time. It creates:
+
+- a `gitlab` namespace running `gitlab/gitlab-ce:latest` (trimmed down — registry,
+  Pages, mail and KAS disabled, Puma/Sidekiq scaled down — so it fits a small lab
+  instead of GitLab's usual 4+ vCPU host),
+- a non-root GitLab account (`maagosti`) that owns a `playground` project seeded
+  with its own `manifests/deployment.yaml` (not cloned from GitHub),
+- a `gitlab-repo` Argo CD repository Secret pointing at that in-cluster GitLab,
+- a `dev-gitlab` namespace holding the `playground-gitlab` Application, synced from
+  that GitLab project instead of GitHub.
+
+Bring it up (after Part 3 is already up):
+
+```bash
+cd ../bonus
+make install   # sanity-checks that p3's tools/cluster are present
+make up        # deploys GitLab, seeds the repo, wires up the Application
+make verify
+```
+
+`make up` prints the GitLab root password, the generated `maagosti` account password,
+and the `playground-gitlab` Application's sync status once it settles. First boot of
+GitLab can take 5-15 minutes.
+
+Other useful commands:
+
+```bash
+make status        # GitLab's pods/PVC + everything in dev-gitlab
+make port-forward  # reach the bonus app at http://localhost:8890/
+make gitlab-ui     # browse GitLab itself at http://localhost:8929/
+make destroy       # removes only the bonus's namespaces/Application/secret
+```
+
+Because the app in `dev-gitlab` uses a `ClusterIP` Service (Part 3's own
+`playground` already holds host port 8888 on this single-node cluster), reach it
+with `make port-forward` rather than a direct curl:
+
+```bash
+make port-forward &
+curl http://localhost:8890/
+```
+
+To change the deployed version, edit and push `manifests/deployment.yaml` inside the
+GitLab-hosted `playground` project (e.g. via `git clone
+http://maagosti:<token>@localhost:8929/maagosti/playground.git`); Argo CD's automated
+sync picks it up the same way it does for Part 3.
+
 ## Repository layout
 
 ```text
@@ -148,20 +256,38 @@ The deployment table must show desired/current/ready replica counts of `1/1/1` f
 ├── Makefile
 ├── README.md
 ├── CRASH_COURSE.md
+├── install_dependencies.sh
 ├── p1
 │   ├── Makefile
 │   ├── Vagrantfile
 │   └── scripts
 │       ├── install-agent.sh
 │       └── install-server.sh
-└── p2
+├── p2
+│   ├── Makefile
+│   ├── Vagrantfile
+│   ├── confs
+│   │   └── apps.yaml
+│   └── scripts
+│       ├── deploy-apps.sh
+│       └── install-k3s.sh
+├── p3
+│   ├── Makefile
+│   ├── confs
+│   │   └── application.yaml
+│   └── scripts
+│       ├── bootstrap.sh
+│       └── install.sh
+└── bonus
 	├── Makefile
-	├── Vagrantfile
 	├── confs
-	│   └── apps.yaml
+	│   ├── application.yaml
+	│   ├── deployment.yaml
+	│   ├── gitlab.yaml
+	│   └── namespace.yaml
 	└── scripts
-		├── deploy-apps.sh
-		└── install-k3s.sh
+		├── bootstrap.sh
+		└── install.sh
 ```
 
 ## Resource overrides
@@ -212,6 +338,15 @@ Delete the VMs and disks:
 make destroy
 ```
 
+Part 3/bonus scripts are also safe to re-run: `install.sh` skips any tool that is
+already present, and `bootstrap.sh` reuses the existing `maagosti-iot` K3d cluster
+instead of recreating it. To force a resync without waiting for Argo CD's poll
+interval:
+
+```bash
+argocd app sync playground          # or playground-gitlab for the bonus
+```
+
 ## Troubleshooting shortcut
 
 Debug from the outside inward:
@@ -225,13 +360,27 @@ Debug from the outside inward:
 7. `kubectl get service,endpointslice,ingress`
 8. `curl -v -H 'Host: app1.com' http://192.168.56.110/`
 
+For Part 3 and the bonus:
+
+1. `k3d cluster list` / `docker ps` — is the cluster actually up?
+2. `kubectl config current-context` — should be `k3d-maagosti-iot`
+3. `kubectl -n argocd get pods` — Argo CD components healthy?
+4. `kubectl -n argocd get application playground -o yaml` (or `playground-gitlab`)
+   — check `status.sync` and `status.conditions` for the real error
+5. `kubectl -n dev get pods` / `kubectl -n dev-gitlab get pods`
+6. For the bonus, `kubectl -n gitlab get pods` and `kubectl -n gitlab logs deploy/gitlab`
+   if GitLab itself never becomes ready
+
 Detailed explanations and defense questions are in [CRASH_COURSE.md](CRASH_COURSE.md).
 
 ## Primary documentation
 
 - [K3s quick start](https://docs.k3s.io/quick-start)
 - [K3s configuration](https://docs.k3s.io/installation/configuration)
+- [K3d documentation](https://k3d.io/)
 - [Vagrant multi-machine environments](https://developer.hashicorp.com/vagrant/docs/multi-machine)
 - [Kubernetes Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
 - [Kubernetes Services](https://kubernetes.io/docs/concepts/services-networking/service/)
 - [Kubernetes Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
+- [Argo CD documentation](https://argo-cd.readthedocs.io/)
+- [GitLab Helm/Omnibus configuration](https://docs.gitlab.com/omnibus/settings/configuration.html)
