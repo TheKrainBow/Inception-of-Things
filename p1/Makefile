@@ -7,13 +7,13 @@ up:
 	$(VAGRANT) up --provider=virtualbox
 
 validate:
-	$(VAGRANT) validate
+	$(VAGRANT) validate --ignore-provider
 
 status:
 	$(VAGRANT) status
 
 verify:
-	$(VAGRANT) ssh $(LOGIN)S -c "sudo k3s kubectl get nodes -o wide"
+	$(VAGRANT) ssh $(LOGIN)S -c "sudo k3s kubectl wait --for=condition=Ready node/$(LOGIN)s node/$(LOGIN)sw --timeout=180s && sudo k3s kubectl get nodes -o wide"
 
 ssh-server:
 	$(VAGRANT) ssh $(LOGIN)S

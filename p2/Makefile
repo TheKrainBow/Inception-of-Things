@@ -7,12 +7,13 @@ up:
 	$(VAGRANT) up --provider=virtualbox
 
 validate:
-	$(VAGRANT) validate
+	$(VAGRANT) validate --ignore-provider
 
 status:
 	$(VAGRANT) status
 
 verify:
+	$(VAGRANT) ssh $(LOGIN)S -c "kubectl rollout status deployment/app1 --timeout=180s && kubectl rollout status deployment/app2 --timeout=180s && kubectl rollout status deployment/app3 --timeout=180s && kubectl get deployment/app1 -o jsonpath='{.spec.replicas}:{.status.readyReplicas}' | grep -qx '1:1' && kubectl get deployment/app2 -o jsonpath='{.spec.replicas}:{.status.readyReplicas}' | grep -qx '3:3' && kubectl get deployment/app3 -o jsonpath='{.spec.replicas}:{.status.readyReplicas}' | grep -qx '1:1'"
 	curl --fail --silent --show-error -H "Host: app1.com" http://192.168.56.110/ | grep 'id="app-1"'
 	curl --fail --silent --show-error -H "Host: app2.com" http://192.168.56.110/ | grep 'id="app-2"'
 	curl --fail --silent --show-error -H "Host: anything.invalid" http://192.168.56.110/ | grep 'id="app-3"'

@@ -51,6 +51,13 @@ configure_kubectl_for_vagrant() {
 	install -d -m 0700 -o "${VAGRANT_USER}" -g "${VAGRANT_USER}" "/home/${VAGRANT_USER}/.kube"
 	install -m 0600 -o "${VAGRANT_USER}" -g "${VAGRANT_USER}" \
 		/etc/rancher/k3s/k3s.yaml "/home/${VAGRANT_USER}/.kube/config"
+	cat >/usr/local/bin/k3s-kubectl <<'EOF'
+#!/usr/bin/env sh
+export K3S_CONFIG_FILE="${K3S_CONFIG_FILE:-/dev/null}"
+exec /usr/local/bin/k3s kubectl "$@"
+EOF
+	chmod 0755 /usr/local/bin/k3s-kubectl
+	ln -sfn /usr/local/bin/k3s-kubectl /usr/local/bin/kubectl
 	ln -sfn /usr/local/bin/kubectl /usr/local/bin/k
 }
 

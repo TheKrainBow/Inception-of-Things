@@ -117,7 +117,9 @@ make resources
 make verify
 ```
 
-`make up` already performs three in-VM HTTP smoke tests. `make verify` repeats the checks from the host:
+`make up` already performs three in-VM HTTP smoke tests. `make verify` checks that
+all three deployments have their required ready replica counts (`1/3/1`), then
+repeats the routing checks from the host:
 
 ```bash
 curl -H 'Host: app1.com' http://192.168.56.110/
