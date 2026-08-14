@@ -1,10 +1,20 @@
 LOGIN ?= tmoragli
 VAGRANT := IOT_LOGIN=$(LOGIN) vagrant
+SERVER_IP := 192.168.56.110
+APP_HOSTS := app1.com app2.com
 
-.PHONY: up validate status verify resources ssh halt destroy
+.PHONY: up hosts validate status verify resources ssh halt destroy
 
-up:
+up: hosts
 	$(VAGRANT) up --provider=virtualbox
+
+hosts:
+	@if ! grep -Eq '^[[:space:]]*$(SERVER_IP)[[:space:]]+([^#]*[[:space:]])?app1\.com([[:space:]]|$$)' /etc/hosts \
+		|| ! grep -Eq '^[[:space:]]*$(SERVER_IP)[[:space:]]+([^#]*[[:space:]])?app2\.com([[:space:]]|$$)' /etc/hosts; then \
+		echo "$(SERVER_IP) $(APP_HOSTS)" | sudo tee -a /etc/hosts >/dev/null; \
+	else \
+		echo "Host mappings already configured for $(APP_HOSTS)"; \
+	fi
 
 validate:
 	$(VAGRANT) validate --ignore-provider

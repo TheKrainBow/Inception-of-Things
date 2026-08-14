@@ -23,7 +23,7 @@ cluster_token = File.read(token_path).strip
 Vagrant.configure("2") do |config|
 	config.vm.box = BOX
 	config.vm.box_check_update = true
-	config.vm.boot_timeout = 600
+	config.vm.boot_timeout = 1200
 	config.ssh.insert_key = true
 	config.vm.synced_folder ".", "/vagrant", disabled: true
 
@@ -37,8 +37,8 @@ Vagrant.configure("2") do |config|
 		server.vm.provider "virtualbox" do |virtualbox|
 			virtualbox.name = server_name
 			virtualbox.gui = false
-			virtualbox.cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "1"))
-			virtualbox.memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "1024"))
+			virtualbox.cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "2"))
+			virtualbox.memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "4096"))
 		end
 
 		server.vm.provision "shell",
