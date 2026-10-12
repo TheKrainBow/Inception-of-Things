@@ -11,7 +11,7 @@ end
 Vagrant.configure("2") do |config|
 	config.vm.box = BOX
 	config.vm.box_check_update = true
-	config.vm.boot_timeout = 600
+	config.vm.boot_timeout = 1200
 	config.ssh.insert_key = true
 	config.vm.synced_folder ".", "/vagrant", disabled: true
 
