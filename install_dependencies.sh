@@ -121,10 +121,64 @@ if command -v argocd >/dev/null 2>&1; then
     log "Argo CD CLI already installed: $(argocd version --client --short 2>/dev/null || true)"
 else
     log "Installing Argo CD CLI (latest release)"
-    ARGOCD_VERSION="$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
-    curl -fsSL -o /tmp/argocd "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
-    sudo install -m 0755 /tmp/argocd /usr/local/bin/argocd
-    rm -f /tmp/argocd
+    # Capture curl's output before piping into grep -m1: grep -m1 exits (and
+    # closes its end of the pipe) as soon as it finds the match, which races
+    # curl still writing the rest of the response and makes it fail with
+    # "curl: (23) Failure writing output" — fatal here under set -e -o pipefail
+    # even though the value we actually wanted was already captured correctly.
+    ARGOCD_RELEASE_JSON="$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest)"
+    ARGOCD_VERSION="$(printf '%s' "${ARGOCD_RELEASE_JSON}" | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+    if [[ -z "${ARGOCD_VERSION}" ]]; then
+        echo "Could not resolve the latest Argo CD release (GitHub API rate limit?)." >&2
+        exit 1
+    fi
+    # The binary is ~240 MB. /tmp is a RAM-backed tmpfs on most setups, so
+    # downloading there fails with "curl: (23) Failure writing output" once the
+    # p1/p2 VMs (or the p3 containers) have taken their share of memory.
+    # /var/tmp is disk-backed, which keeps this working whatever else is running.
+    ARGOCD_TMP="$(mktemp -d -p /var/tmp argocd-install.XXXXXX)"
+    trap 'echo "[DEBUG] EXIT trap fired: exit_code=$? last_cmd=\"${BASH_COMMAND}\"" >&2; rm -rf "${ARGOCD_TMP}"' EXIT
+    ARGOCD_URL="https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-${ARCH}"
+    echo "[DEBUG] ARGOCD_VERSION=${ARGOCD_VERSION} ARCH=${ARCH}"
+    echo "[DEBUG] ARGOCD_TMP=${ARGOCD_TMP}"
+    echo "[DEBUG] ARGOCD_URL=${ARGOCD_URL}"
+    echo "[DEBUG] free -h:"; free -h
+    echo "[DEBUG] df -h on ARGOCD_TMP:"; df -h "${ARGOCD_TMP}"
+    # curl's --retry only covers select network/HTTP-transient errors, not local
+    # write errors (23) — those need --retry-all-errors, and even then a
+    # half-written file can be left behind, so verify the size and retry by hand.
+    ARGOCD_DOWNLOAD_OK=0
+    for attempt in 1 2 3; do
+        echo "[DEBUG] --- attempt ${attempt} starting ---"
+        rm -f "${ARGOCD_TMP}/argocd"
+        set +e
+        curl -fSL --retry 3 --retry-all-errors -o "${ARGOCD_TMP}/argocd" "${ARGOCD_URL}"
+        CURL_EXIT=$?
+        set -e
+        echo "[DEBUG] attempt ${attempt}: curl exited with code ${CURL_EXIT}"
+        if [[ "${CURL_EXIT}" -eq 0 ]]; then
+            EXPECTED_SIZE="$(curl -sIL "${ARGOCD_URL}" | grep -i '^content-length:' | tail -1 | tr -d '\r' | awk '{print $2}')"
+            ACTUAL_SIZE="$(stat -c%s "${ARGOCD_TMP}/argocd" 2>/dev/null || echo 0)"
+            echo "[DEBUG] attempt ${attempt}: expected=${EXPECTED_SIZE} actual=${ACTUAL_SIZE}"
+            if [[ -n "${EXPECTED_SIZE}" && "${ACTUAL_SIZE}" != "${EXPECTED_SIZE}" ]]; then
+                warn "Argo CD download attempt ${attempt} looked incomplete (${ACTUAL_SIZE} of ${EXPECTED_SIZE} bytes), retrying..."
+                continue
+            fi
+            ARGOCD_DOWNLOAD_OK=1
+            break
+        fi
+        warn "Argo CD download attempt ${attempt} failed (curl exit ${CURL_EXIT}), retrying..."
+        echo "[DEBUG] free -h after failed attempt ${attempt}:"; free -h
+        echo "[DEBUG] df -h after failed attempt ${attempt}:"; df -h "${ARGOCD_TMP}"
+    done
+    echo "[DEBUG] loop finished, ARGOCD_DOWNLOAD_OK=${ARGOCD_DOWNLOAD_OK}"
+    if [[ "${ARGOCD_DOWNLOAD_OK}" -ne 1 ]]; then
+        echo "Failed to download the Argo CD CLI after 3 attempts." >&2
+        exit 1
+    fi
+    sudo install -m 0755 "${ARGOCD_TMP}/argocd" /usr/local/bin/argocd
+    rm -rf "${ARGOCD_TMP}"
+    trap - EXIT
 fi
 
 log "All dependencies installed"
