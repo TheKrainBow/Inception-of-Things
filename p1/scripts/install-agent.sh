@@ -28,7 +28,7 @@ private_interface() {
 }
 
 wait_for_server() {
-	for _ in $(seq 1 150); do
+	for _ in $(seq 1 300); do
 		if timeout 2 bash -c "</dev/tcp/${SERVER_IP}/6443" 2>/dev/null; then
 			return 0
 		fi

@@ -1,10 +1,11 @@
 LOGIN ?= tmoragli
+PROVIDER ?= libvirt
 VAGRANT := IOT_LOGIN=$(LOGIN) vagrant
 
 .PHONY: up validate status verify ssh-server ssh-worker halt destroy
 
 up:
-	$(VAGRANT) up --provider=virtualbox
+	$(VAGRANT) up --provider=$(PROVIDER) --no-parallel
 
 validate:
 	$(VAGRANT) validate --ignore-provider

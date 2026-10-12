@@ -23,12 +23,35 @@ cluster_token = File.read(token_path).strip
 Vagrant.configure("2") do |config|
 	config.vm.box = BOX
 	config.vm.box_check_update = true
-	config.vm.boot_timeout = 1200
+	config.vm.boot_timeout = 600
 	config.ssh.insert_key = true
 	config.vm.synced_folder ".", "/vagrant", disabled: true
 
+	config.vm.provider "virtualbox" do |virtualbox|
+		# Running nested (VirtualBox inside a VM) on a hybrid P-core/E-core Intel CPU,
+		# the guest's kvm-clock/TSC reads garbage and the kernel hangs early in boot.
+		# Disable the paravirt clock and have VirtualBox emulate the TSC instead.
+		virtualbox.customize ["modifyvm", :id, "--paravirtprovider", "none"]
+		virtualbox.customize ["setextradata", :id, "VBoxInternal/TM/TSCMode", "VirtTSCEmulated"]
+	end
+
+	config.vm.provider "libvirt" do |libvirt|
+		# Name the libvirt domains <login>S/<login>SW instead of "<dir>_<login>S".
+		libvirt.default_prefix = ""
+		libvirt.driver = "kvm"
+		libvirt.cpu_mode = "host-passthrough"
+		# The bento box is UEFI-only (GPT + EFI partition, no BIOS boot code), so the
+		# default SeaBIOS spins forever on "Booting from Hard Disk...". libvirt creates
+		# each domain's NVRAM file from the matching OVMF_VARS template on first boot.
+		libvirt.loader = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+	end
+
 	server_name = "#{LOGIN}S"
 	agent_name = "#{LOGIN}SW"
+	server_cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "1"))
+	server_memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "2048"))
+	agent_cpus = Integer(ENV.fetch("IOT_AGENT_CPUS", "1"))
+	agent_memory = Integer(ENV.fetch("IOT_AGENT_MEMORY", "1024"))
 
 	config.vm.define server_name, primary: true do |server|
 		server.vm.hostname = server_name
@@ -37,12 +60,14 @@ Vagrant.configure("2") do |config|
 		server.vm.provider "virtualbox" do |virtualbox|
 			virtualbox.name = server_name
 			virtualbox.gui = false
-			virtualbox.cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "2"))
-			virtualbox.memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "4096"))
-			# Works around a guest freeze on hybrid P-core/E-core Intel CPUs (12th gen+):
-			# the default "kvm" paravirt clock desyncs when the host migrates vCPU
-			# threads across core types, triggering an RCU/softlockup hang in the guest.
-			virtualbox.customize ["modifyvm", :id, "--paravirtprovider", "legacy"]
+			virtualbox.cpus = server_cpus
+			virtualbox.memory = server_memory
+		end
+
+		server.vm.provider "libvirt" do |libvirt|
+			libvirt.cpus = server_cpus
+			libvirt.memory = server_memory
+			libvirt.nvram = "/var/lib/libvirt/qemu/nvram/#{server_name}_VARS.fd"
 		end
 
 		server.vm.provision "shell",
@@ -61,9 +86,14 @@ Vagrant.configure("2") do |config|
 		agent.vm.provider "virtualbox" do |virtualbox|
 			virtualbox.name = agent_name
 			virtualbox.gui = false
-			virtualbox.cpus = Integer(ENV.fetch("IOT_AGENT_CPUS", "2"))
-			virtualbox.memory = Integer(ENV.fetch("IOT_AGENT_MEMORY", "4096"))
-			virtualbox.customize ["modifyvm", :id, "--paravirtprovider", "legacy"]
+			virtualbox.cpus = agent_cpus
+			virtualbox.memory = agent_memory
+		end
+
+		agent.vm.provider "libvirt" do |libvirt|
+			libvirt.cpus = agent_cpus
+			libvirt.memory = agent_memory
+			libvirt.nvram = "/var/lib/libvirt/qemu/nvram/#{agent_name}_VARS.fd"
 		end
 
 		agent.vm.provision "shell",

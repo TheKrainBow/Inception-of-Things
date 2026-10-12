@@ -75,12 +75,24 @@ wait_for_server() {
 	return 1
 }
 
+wait_for_node() {
+	for _ in $(seq 1 60); do
+		if /usr/local/bin/kubectl get node "${K3S_NODE_NAME}" >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep 2
+	done
+	echo "Node ${K3S_NODE_NAME} did not register in time" >&2
+	return 1
+}
+
 main() {
 	install_prerequisites
 	write_k3s_config "$(private_interface)"
 	install_k3s
 	wait_for_server
 	configure_kubectl_for_vagrant
+	wait_for_node
 	/usr/local/bin/kubectl get nodes -o wide
 }
 

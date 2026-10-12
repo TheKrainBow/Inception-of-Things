@@ -3,7 +3,8 @@
 # Inception-of-Things (IoT) - mandatory part dependency installer
 #
 # Installs everything needed on the HOST machine to complete p1, p2 and p3:
-#   - VirtualBox        (Vagrant provider, used by p1/p2)
+#   - libvirt/KVM       (default Vagrant provider for p1/p2, via vagrant-libvirt)
+#   - VirtualBox        (alternative p1/p2 provider: make up PROVIDER=virtualbox)
 #   - Vagrant           (p1/p2)
 #   - kubectl           (p1/p2/p3)
 #   - Docker            (required by k3d, p3)
@@ -66,6 +67,27 @@ else
         | sudo tee /etc/apt/sources.list.d/hashicorp.list >/dev/null
     sudo apt-get update
     sudo apt-get install -y vagrant
+fi
+
+# ---------------------------------------------------------------------------
+# libvirt/KVM + vagrant-libvirt (default Vagrant provider for p1/p2: VirtualBox
+# crashes when the host is itself a VirtualBox VM)
+# ---------------------------------------------------------------------------
+if command -v virsh >/dev/null 2>&1; then
+    log "libvirt already installed: $(virsh --version)"
+else
+    log "Installing libvirt/KVM"
+    sudo apt-get install -y qemu-system-x86 qemu-utils ovmf libvirt-daemon-system libvirt-clients \
+        dnsmasq-base ebtables libvirt-dev libxml2-dev libxslt1-dev zlib1g-dev ruby-dev build-essential pkg-config
+    sudo usermod -aG libvirt,kvm "$USER"
+    warn "Added $USER to the 'libvirt' and 'kvm' groups. Log out/in for it to take effect."
+fi
+
+if vagrant plugin list 2>/dev/null | grep -q '^vagrant-libvirt '; then
+    log "vagrant-libvirt plugin already installed"
+else
+    log "Installing the vagrant-libvirt plugin"
+    vagrant plugin install vagrant-libvirt
 fi
 
 # ---------------------------------------------------------------------------

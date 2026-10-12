@@ -17,7 +17,7 @@ make LOGIN=yourlogin up
 
 Install these on the host computer:
 
-- Vagrant and VirtualBox, for Parts 1 and 2
+- Vagrant with libvirt/KVM and the `vagrant-libvirt` plugin, for Parts 1 and 2 (the default provider). VirtualBox also works: `make up PROVIDER=virtualbox`. Libvirt is the default because VirtualBox crashes when the host is itself a VirtualBox VM. Libvirt creates its own network for `192.168.56.0/24`, so remove VirtualBox's `vboxnet0` first if it exists (`VBoxManage hostonlyif remove vboxnet0`).
 - Docker, K3d, kubectl and the Argo CD CLI, for Part 3 and the bonus
 - GNU Make (optional; every command can also be run directly)
 - `curl` for the Part 2 host-side checks and the Part 3/bonus smoke tests
@@ -47,7 +47,7 @@ IOT_BOX=bento/ubuntu-24.04 make up
 
 ## Important: run one part at a time
 
-Parts 1 and 2 both require a VM named `<login>S` at `192.168.56.110`. They are separate Vagrant environments and cannot coexist under the same VirtualBox VM name. Destroy Part 1 before launching Part 2.
+Parts 1 and 2 both require a VM named `<login>S` at `192.168.56.110`. They are separate Vagrant environments and cannot coexist under the same VM name. Destroy Part 1 before launching Part 2.
 
 Part 3 and the bonus do not use Vagrant at all — they run K3d (K3s in Docker) directly on the host, so they don't conflict with Parts 1/2 and can be left running alongside them. The bonus is layered on top of the same K3d cluster that Part 3 creates, so bring Part 3 up first.
 

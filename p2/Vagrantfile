@@ -15,7 +15,28 @@ Vagrant.configure("2") do |config|
 	config.ssh.insert_key = true
 	config.vm.synced_folder ".", "/vagrant", disabled: true
 
+	config.vm.provider "virtualbox" do |virtualbox|
+		# Running nested (VirtualBox inside a VM) on a hybrid P-core/E-core Intel CPU,
+		# the guest's kvm-clock/TSC reads garbage and the kernel hangs early in boot.
+		# Disable the paravirt clock and have VirtualBox emulate the TSC instead.
+		virtualbox.customize ["modifyvm", :id, "--paravirtprovider", "none"]
+		virtualbox.customize ["setextradata", :id, "VBoxInternal/TM/TSCMode", "VirtTSCEmulated"]
+	end
+
+	config.vm.provider "libvirt" do |libvirt|
+		# Name the libvirt domain <login>S instead of "<dir>_<login>S".
+		libvirt.default_prefix = ""
+		libvirt.driver = "kvm"
+		libvirt.cpu_mode = "host-passthrough"
+		# The bento box is UEFI-only (GPT + EFI partition, no BIOS boot code), so the
+		# default SeaBIOS spins forever on "Booting from Hard Disk...". libvirt creates
+		# each domain's NVRAM file from the matching OVMF_VARS template on first boot.
+		libvirt.loader = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+	end
+
 	server_name = "#{LOGIN}S"
+	server_cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "2"))
+	server_memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "2048"))
 
 	config.vm.define server_name, primary: true do |server|
 		server.vm.hostname = server_name
@@ -24,8 +45,14 @@ Vagrant.configure("2") do |config|
 		server.vm.provider "virtualbox" do |virtualbox|
 			virtualbox.name = server_name
 			virtualbox.gui = false
-			virtualbox.cpus = Integer(ENV.fetch("IOT_SERVER_CPUS", "2"))
-			virtualbox.memory = Integer(ENV.fetch("IOT_SERVER_MEMORY", "4096"))
+			virtualbox.cpus = server_cpus
+			virtualbox.memory = server_memory
+		end
+
+		server.vm.provider "libvirt" do |libvirt|
+			libvirt.cpus = server_cpus
+			libvirt.memory = server_memory
+			libvirt.nvram = "/var/lib/libvirt/qemu/nvram/#{server_name}_VARS.fd"
 		end
 
 		server.vm.provision "file",
