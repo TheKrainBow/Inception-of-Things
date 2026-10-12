@@ -63,18 +63,22 @@ curl http://localhost:8888/
 # {"status":"ok", "message": "v1"}
 ```
 
-Or run everything in c/e together:
+Or run every check above (a–e) in one go:
 
 ```bash
 make verify
 ```
 
+It prints an `[OK]`/`[KO]` line per step, then where Argo CD lives, the admin
+password, and the commands to test a v1 → v2 rollout.
+
 **f. Open the Argo CD dashboard**
 
-Argo CD isn't exposed on the host by default — port-forward it first:
+Argo CD runs inside the cluster (namespace `argocd`, service `argocd-server`)
+and isn't exposed on the host by default, so port-forward it first (in another terminal):
 
 ```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:443
+make ui   # = kubectl -n argocd port-forward svc/argocd-server 8080:443
 ```
 
 Then open:
@@ -104,7 +108,9 @@ argocd app get playground
 ## 3. Other useful commands
 
 ```bash
+make ui        # port-forward the Argo CD UI to https://localhost:8080
 make status    # Argo CD applications + everything in the dev namespace
+make push-v2   # bump the image tag in the GitHub repo to v2 (make push-v1 to roll back)
 make destroy   # deletes the maagosti-iot k3d cluster
 ```
 

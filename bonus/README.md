@@ -60,11 +60,17 @@ kubectl -n argocd get application playground-gitlab
 kubectl -n dev-gitlab get pods
 ```
 
-Or run c/d together:
+Or run every check in this section in one go:
 
 ```bash
 make verify
 ```
+
+It prints an `[OK]`/`[KO]` line per step: cluster, GitLab pod/PVC, the
+`maagosti/playground` project and the image in its manifest, the Argo CD repo
+secret, `playground-gitlab` Synced/Healthy, the running image matching
+GitLab's, the app answering, and Part 3 still running. Then it prints where
+GitLab and Argo CD are, their logins, and how to test a rollout.
 
 **e. The app answers on its own port**
 
@@ -93,11 +99,12 @@ containing `manifests/deployment.yaml` — the file Argo CD is syncing from.
 
 **g. Open the Argo CD dashboard**
 
-Argo CD isn't exposed on the host by default — port-forward it first (same
-Argo CD instance as Part 3, reused by the bonus):
+Argo CD runs inside the cluster (namespace `argocd`, service `argocd-server`,
+same instance as Part 3) and isn't exposed on the host by default, so
+port-forward it first (in another terminal):
 
 ```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:443
+make argocd-ui   # = kubectl -n argocd port-forward svc/argocd-server 8080:443
 ```
 
 Then open:
@@ -125,6 +132,8 @@ bonus), both `Synced` / `Healthy`. Clicking into `playground-gitlab` shows the
 make status        # GitLab's pods/PVC + everything in dev-gitlab
 make port-forward   # reach the bonus app at http://localhost:8890/
 make gitlab-ui      # browse GitLab itself at http://localhost:8929/
+make argocd-ui      # browse Argo CD at https://localhost:8080/
+make push-v1        # bump the image tag in the GitLab repo (make push-v2 to switch back)
 make destroy         # removes only the bonus's namespaces/Application/secret
 ```
 
